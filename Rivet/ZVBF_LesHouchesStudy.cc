@@ -87,7 +87,7 @@ public:
         bookChannelHist("jet1_Eta", 20, -4.7, 4.7);
         bookChannelHist("jet2_Pt", 100, 0, 1000);
         bookChannelHist("jet2_Eta", 20, -4.7, 4.7);
-        bookChannelHist("jet3_Pt", 100, 0, 1000);
+        bookChannelHist("jet3_Pt", 60, 0, 300);
         bookChannelHist("jet3_Eta", 20, -4.7, 4.7);
 
         // Composite variables
@@ -102,6 +102,7 @@ public:
         bookChannelHist("dRjj", 60, 0, 15);
         bookChannelHist("etasj3", 40, -5, 5);
         bookChannelHist("etasll", 40, -5, 5);
+        hists1D_["veto_j3"] = bookHisto1D("veto_j3", 60, 0, 300);
     }
 
     // Change to true for CMS tight fiducial definition
@@ -219,7 +220,6 @@ public:
     void finalize() {
         std::cout << "Finalizing..." << endl;  
 
-        removeEmptyHists();
         float efficiency= selectedEvents/totalEvents; 
         double xsec = crossSection();
 
@@ -242,12 +242,24 @@ public:
         // If you're using scale weights, using the sum of events is correct since the
         // cross section is associated with the central value (always 1) and the weights 
         // should not be unitary
+        auto j3hist = channelHists_["jet3_Pt"].GetHist(0);
+        for (size_t i = 0; i < j3hist->numBins(); i++) {
+            double totalInt = j3hist->integral();
+            double vetoEff = totalInt != 0 ? j3hist->integralTo(i)/totalInt : 0;
+            hists1D_["veto_j3"]->fillBin(i, vetoEff);
+        }
+
+        removeEmptyHists();
         float sumWeights = sumOfWeights();
-        for (const auto& hist : hists1D_)
+        for (const auto& hist : hists1D_) {
+            if (hist.first.find("veto") != std::string::npos)
+                continue;
             scale(hist.second, xsec / sumWeights);
+        }
         for (auto& chanHist : channelHists_) {
             chanHist.second.Scale(xsec, sumWeights);
         }
+
     }        
 
 private:
@@ -304,8 +316,21 @@ private:
                 if (channel != 0)
                     hists_[0]->fill(value, weight);
             };
+
+            void fillBin(int bin, double value, int channel) {
+                if (hists_.find(channel) == hists_.end()) {
+                    throw std::runtime_error("Attempt to fill hist for invalid channel ID " 
+                            + std::to_string(channel));
+                }
+
+                hists_[channel]->fillBin(bin, value);
+                std::cout << "Bin is " << bin << " Value is " << value << std::endl;
+                if (channel != 0)
+                    hists_[0]->fillBin(bin, value);
+            };
     };
     std::map<std::string, Histo1DPtr> hists1D_;
+    //std::map<std::string, Scatter2DPtr> scatters_;
     std::map<std::string, ByChannelHist> channelHists_;
 
     void bookChannelHist (const std::string histname, int bins, float binlow, float binhigh) {
